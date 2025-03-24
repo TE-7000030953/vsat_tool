@@ -1,0 +1,27 @@
+SITtrack, Patch link, Patch file, Makefile data, Config details
+10,https://web.git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=bce1305c0ece3dc549663605e567655dd701752c,"drivers/hid/hid-core.c
+",".Makefile
+Makefile not found
+",CONFIG invalid
+11,https://web.git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=2960589a865b6f66d141d79b2dd1373e4e50fe17,"drivers/hid/hid-core.c
+",".Makefile
+Makefile not found
+",CONFIG invalid
+12,https://web.git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=fa0ef93868a6062babe1144df2807a8b1d4924d2,"drivers/usb/dwc3/dwc3-qcom.c
+",".Makefile
+Makefile not found
+",CONFIG invalid
+13,https://web.git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=36a4d82dddbbd421d2b8e79e1cab68c8126d5075,"fs/ntfs/attrib.c
+",".Makefile
+Makefile not found
+",CONFIG invalid
+14,https://web.git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=120434e5b305defa1fb1e7a38421ed08f93243d5,"include/kunit/test.h
+lib/kunit/device.c
+lib/kunit/test.c
+",".Makefile
+aoe-y := device.o
+obj-$(CONFIG_ATA_OVER_ETH) = aoe.o
+aoe-y := test.o
+.CXD File
+CONFIG_ATA_OVER_ETH=y","CONFIG invalidCONFIG is set
+CONFIG is set"

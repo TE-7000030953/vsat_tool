@@ -1,0 +1,325 @@
+
+
+
+
+
+
+Merge tag 'linux_kselftest-kunit-fixes-6.11-rc7' of git://git.kernel.org/pub/scm/linux/kernel/git/shuah/linux-kselftest - kernel/git/torvalds/linux.git - Linux kernel source tree
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+index
+ : 
+kernel/git/torvalds/linux.git
+
+
+
+
+for-next
+
+
+master
+
+
+ 
+
+
+Linux kernel source tree
+Linus Torvalds
+
+
+
+
+about
+summary
+refs
+log
+tree
+commit
+diff
+stats
+
+
+
+
+log msg
+
+
+author
+
+
+committer
+
+
+range
+
+
+
+
+
+
+
+
+
+
+
+
+diff options
+context:
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+15
+20
+25
+30
+35
+40
+space:
+include
+ignore
+mode:
+unified
+ssdiff
+stat only
+
+
+author
+Linus Torvalds <torvalds@linux-foundation.org>
+2024-09-05 09:43:38 -0700
+
+
+committer
+Linus Torvalds <torvalds@linux-foundation.org>
+2024-09-05 09:43:38 -0700
+
+
+commit
+120434e5b305defa1fb1e7a38421ed08f93243d5
+ (
+patch
+)
+
+
+tree
+30918086f19576f08728c670b1e5f2883ae8415b
+
+
+parent
+c763c43396883456ef57e5e78b64d3c259c4babc
+ (
+diff
+)
+parent
+f2c6dbd220170c2396fb019ead67fbada1e23ebd
+ (
+diff
+)
+download
+linux-120434e5b305defa1fb1e7a38421ed08f93243d5.tar.gz
+
+
+Merge tag 'linux_kselftest-kunit-fixes-6.11-rc7' of git://git.kernel.org/pub/scm/linux/kernel/git/shuah/linux-kselftest
+Pull kunit fix fromShuah Khan:
+ "One single fix to a use-after-free bug resulting from
+  kunit_driver_create() failing to copy the driver name leaving it on
+  the stack or freeing it"
+
+* tag 'linux_kselftest-kunit-fixes-6.11-rc7' of git://git.kernel.org/pub/scm/linux/kernel/git/shuah/linux-kselftest:
+  kunit: Device wrappers should also manage driver name
+
+Diffstat
+-rw-r--r--
+include/kunit/test.h
+48
+
+
+-rw-r--r--
+lib/kunit/device.c
+7
+
+
+-rw-r--r--
+lib/kunit/test.c
+19
+
+
+3 files changed, 72 insertions, 2 deletions
+diff --git a/include/kunit/test.h b/include/kunit/test.h
+index e2a1f0928e8b13..5ac237c949a08e 100644
+--- a/
+include/kunit/test.h
++++ b/
+include/kunit/test.h
+@@ -28,6 +28,7 @@
+ #include <linux/types.h>
+ 
+ #include <asm/rwonce.h>
++#include <asm/sections.h>
+ 
+ /* Static key: true if any KUnit tests are currently running */
+ DECLARE_STATIC_KEY_FALSE(kunit_running);
+@@ -480,6 +481,53 @@ static inline void *kunit_kcalloc(struct kunit *test, size_t n, size_t size, gfp
+ 	return kunit_kmalloc_array(test, n, size, gfp | __GFP_ZERO);
+ }
+ 
++
++/**
++ * kunit_kfree_const() - conditionally free test managed memory
++ * @x: pointer to the memory
++ *
++ * Calls kunit_kfree() only if @x is not in .rodata section.
++ * See kunit_kstrdup_const() for more information.
++ */
++void kunit_kfree_const(struct kunit *test, const void *x);
++
++/**
++ * kunit_kstrdup() - Duplicates a string into a test managed allocation.
++ *
++ * @test: The test context object.
++ * @str: The NULL-terminated string to duplicate.
++ * @gfp: flags passed to underlying kmalloc().
++ *
++ * See kstrdup() and kunit_kmalloc_array() for more information.
++ */
++static inline char *kunit_kstrdup(struct kunit *test, const char *str, gfp_t gfp)
++{
++	size_t len;
++	char *buf;
++
++	if (!str)
++		return NULL;
++
++	len = strlen(str) + 1;
++	buf = kunit_kmalloc(test, len, gfp);
++	if (buf)
++		memcpy(buf, str, len);
++	return buf;
++}
++
++/**
++ * kunit_kstrdup_const() - Conditionally duplicates a string into a test managed allocation.
++ *
++ * @test: The test context object.
++ * @str: The NULL-terminated string to duplicate.
++ * @gfp: flags passed to underlying kmalloc().
++ *
++ * Calls kunit_kstrdup() only if @str is not in the rodata section. Must be freed with
++ * kunit_kfree_const() -- not kunit_kfree().
++ * See kstrdup_const() and kunit_kmalloc_array() for more information.
++ */
++const char *kunit_kstrdup_const(struct kunit *test, const char *str, gfp_t gfp);
++
+ /**
+  * kunit_vm_mmap() - Allocate KUnit-tracked vm_mmap() area
+  * @test: The test context object.
+diff --git a/lib/kunit/device.c b/lib/kunit/device.c
+index 25c81ed465fb77..520c1fccee8a54 100644
+--- a/
+lib/kunit/device.c
++++ b/
+lib/kunit/device.c
+@@ -89,7 +89,7 @@ struct device_driver *kunit_driver_create(struct kunit *test, const char *name)
+ 	if (!driver)
+ 		return ERR_PTR(err);
+ 
+-	driver->name = name;
++	driver->name = kunit_kstrdup_const(test, name, GFP_KERNEL);
+ 	driver->bus = &kunit_bus_type;
+ 	driver->owner = THIS_MODULE;
+ 
+@@ -192,8 +192,11 @@ void kunit_device_unregister(struct kunit *test, struct device *dev)
+ 	const struct device_driver *driver = to_kunit_device(dev)->driver;
+ 
+ 	kunit_release_action(test, device_unregister_wrapper, dev);
+-	if (driver)
++	if (driver) {
++		const char *driver_name = driver->name;
+ 		kunit_release_action(test, driver_unregister_wrapper, (void *)driver);
++		kunit_kfree_const(test, driver_name);
++	}
+ }
+ EXPORT_SYMBOL_GPL(kunit_device_unregister);
+ 
+diff --git a/lib/kunit/test.c b/lib/kunit/test.c
+index e8b1b52a19abb3..089c832e3cdbd5 100644
+--- a/
+lib/kunit/test.c
++++ b/
+lib/kunit/test.c
+@@ -874,6 +874,25 @@ void kunit_kfree(struct kunit *test, const void *ptr)
+ }
+ EXPORT_SYMBOL_GPL(kunit_kfree);
+ 
++void kunit_kfree_const(struct kunit *test, const void *x)
++{
++#if !IS_MODULE(CONFIG_KUNIT)
++	if (!is_kernel_rodata((unsigned long)x))
++#endif
++		kunit_kfree(test, x);
++}
++EXPORT_SYMBOL_GPL(kunit_kfree_const);
++
++const char *kunit_kstrdup_const(struct kunit *test, const char *str, gfp_t gfp)
++{
++#if !IS_MODULE(CONFIG_KUNIT)
++	if (is_kernel_rodata((unsigned long)str))
++		return str;
++#endif
++	return kunit_kstrdup(test, str, gfp);
++}
++EXPORT_SYMBOL_GPL(kunit_kstrdup_const);
++
+ void kunit_cleanup(struct kunit *test)
+ {
+ 	struct kunit_resource *res;
+ 
+
+
+generated by 
+cgit 1.2.3-korg
+ (
+git 2.43.0
+) at 2025-03-24 18:36:57 +0000
+
+
+ 
+
+
+
+
+
